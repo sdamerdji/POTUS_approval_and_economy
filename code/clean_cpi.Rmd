@@ -1,0 +1,21 @@
+---
+title: "clean_cpi"
+author: Salim Damerdji
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+```{r}
+cpi <- read.csv('../data/rawdata/cpi_data.csv',skip = 2) %>%
+  as_tibble() %>%
+  mutate(date = mdy(Date)) %>%
+  select(date, Period_Change) %>%
+  rename(cpi_change = Period_Change)
+  
+(cpi <- cpi[-1,])
+write.csv(cpi, file = "../data/cleandata/cpi.csv", row.names=FALSE)
+```

@@ -1,0 +1,208 @@
+---
+title: "How Popular is Trump ?"
+output: html_document
+---
+
+Notes to self:
+
+- NAs are being introduced somehow before get_unemployment() or get_gdp()
+
+
+- I don't have GDP data after 2017. This is really important since I'm using only prior gdp data
+
+
+- Figure out when gdp data gets collected
+
+
+- Add variable for time since last inauguration. Apparently presidents get a bump when running again
+
+
+- Smooth polling data to get rid of noise
+
+
+```{r, include=F}
+library(tidyverse)
+library(lubridate)
+```
+
+```{r}
+get_tibble <- function(filename, date_format){
+  return(as_tibble(read.csv(paste0("../data/cleandata/", filename, ".csv"))) %>%
+            mutate(date = as.Date(date, format = date_format)))
+}
+
+approval <- get_tibble("approval", "%Y-%m-%d") %>% 
+  arrange(date)
+gdp <- get_tibble("gdp", "%Y-%m-%d")
+employment <- get_tibble('employment', "%Y-%m-%d")
+cpi <- get_tibble('cpi', "%Y-%m-%d")
+exports <- get_tibble('export', "%Y-%m-%d")
+housing <- get_tibble('housing', "%Y-%m-%d")
+term_dates <- get_tibble('inauguration', "%m-%d-%Y") %>%
+  rename(term_start=date)
+```
+
+```{r}
+approval %>%
+  group_by(president) %>%
+  count() %>%
+  arrange(desc(n))
+```
+## Feature Engineering
+
+#### Days as president
+
+```{r}
+presidency_start <- term_dates %>%
+  group_by(president) %>%
+  summarise(pres_start = min(term_start))
+
+approval <- left_join(approval, presidency_start, by = 'president') %>%
+  mutate(days_as_pres = as.double(date - pres_start)) %>%
+  select(-pres_start)
+```
+
+#### Days into term
+```{r}
+
+term_dates_stack <- term_dates$term_start
+# This functions assumes term_dates and approval are sorted such that earlier dates are on top
+# This function also will remove all but one observation from term_dates_stack
+# Using a stack is 12x faster than brute force with for loop, and 10x faster than brute force with lapply
+get_days_into_term <- function(row_num){
+  p_date <- approval$date[row_num]
+  if (length(term_dates_stack)==1 || (p_date>term_dates_stack[1] && p_date<term_dates_stack[2])){
+    return(p_date - term_dates_stack[1])
+  } else if (p_date > term_dates_stack[2]) {
+    term_dates_stack <<- term_dates_stack[-1]
+    return(get_days_into_term(row_num))
+  } else {
+    return(NA)
+  }
+}
+approval[,'days_into_term'] <- sapply(1:nrow(approval), get_days_into_term) 
+
+```
+
+#### Years of Growth
+```{r, include=F}
+
+gdp <- mutate(gdp, is_gdp_up = sapply(gdp$gdp_change, function(change) if_else(change > 0, true = 1, false = 0)))
+gdp[,'qrtrs_of_growth'] <- NA
+
+gdp
+cum_change <- function(row){
+  if (row == 1) {
+    gdp[row, "qrtrs_of_growth"] <<- 0
+  }
+  else if (gdp$is_gdp_up[row] == 1 && gdp$is_gdp_up[row-1] >= 1) {
+    gdp[row, "qrtrs_of_growth"] <<- gdp$qrtrs_of_growth[row-1] + 1
+  }
+  else if (gdp$is_gdp_up[row] == 0 && gdp$is_gdp_up[row-1] <= 0) {
+    gdp[row, "qrtrs_of_growth"] <<- gdp$qrtrs_of_growth[row-1] - 1
+  }
+  else {
+    gdp[row, "qrtrs_of_growth"] <<- gdp$is_gdp_up[row]
+  }
+}
+
+sapply(1:nrow(gdp), cum_change)
+```
+
+```{r}
+gdp %>% filter(
+
+```
+
+Note to self: the above features absolutely introduce collinearity.
+
+```{r}
+
+range(gdp$date)
+range(employment$date)
+range(cpi$date)
+range(housing$date)
+range(exports$date)
+range(approval$date)
+
+
+get_gdp <- function(poll_day){
+  return((filter(gdp, date < poll_day) %>%
+           filter(date == max(date)) %>%
+           select(gdp_change) %>%
+           as.numeric())[1]) 
+}
+
+get_unemployment <- function(poll_day){
+  return((filter(unemployment, date < poll_day) %>%
+           filter(date == max(date)) %>%
+           select(unemployed_percent) %>%
+           as.numeric())[1]) 
+}
+```
+
+```{r}
+approval <- approval %>%
+  mutate(gdp = sapply(X = approval$startdate, FUN = get_gdp),
+         unemployment = sapply(X = approval$startdate, FUN = get_unemployment))
+
+# Deal with NAs later
+approval <- approval[complete.cases(approval), ]
+nrow(approval)
+
+(approval)
+
+smoother <- approxfun(x = approval$startdate, y = approval$approve)
+
+approval_smoothed <- approval %>% 
+  select(-enddate, -disapprove) %>%
+  mutate(poll_smoothed = smoother(startdate))
+
+model <- lm(poll_smoothed ~ days_as_pres + gdp + unemployment + president, data = approval_smoothed, x = TRUE)
+summary(model)
+
+ggplot(data = as.data.frame(model$residuals)) +
+  geom_point(aes(x = approval$startdate, y = model$residuals))
+
+predicted_approval <- data.frame(pred= predict(model, approval_smoothed), x = approval_smoothed$startdate)
+
+(approval_smoothed)
+ggplot(data = approval_smoothed, aes(x = startdate, y = poll_smoothed)) +
+  geom_smooth(method = "lm", formula = approval_smoothed$poll_smoothed ~ days_as_pres + gdp + unemployment + president)
+
+ggplot(approval_smoothed) +
+  geom_point(aes(x = startdate, y = poll_smoothed), color = "steelblue", alpha = .1) +
+  geom_line(aes(x = predicted_approval$x, y = predicted_approval$pred), color = "black")
+  
+```
+
+
+Normal unemployment rate is 5%
+
+```{r}
+
+sqrt(mean((summary(model))$residuals^2))
+avg_unemployment_per_year <- unemployment %>%
+  group_by(floor_date(date, "year")) %>%
+  summarise(avg = mean(unemployed_percent))
+
+avg_gdp_growth_per_year <- gdp %>%
+  group_by(floor_date(date, "year")) %>%
+  summarise(avg = mean(gdp$gdp_change))
+
+
+(normal_unemployment <- mean(avg_unemployment_per_year$avg))
+(normal_gdp <- mean(avg_gdp_growth_per_year$avg))
+
+squo_unemployment <- (filter(unemployment, date == max(date)))$unemployed_percent
+squo_gdp <- filter(gdp, date == max(date))$gdp_change
+
+trump_econ_bump <- (normal_unemployment - squo_unemployment)* 3.39 + (squo_gdp - normal_gdp) * .007
+(trump_recent <- approval %>%
+    filter(startdate == max(startdate)) %>%
+    select(approve, disapprove) %>%
+    summary()) 
+
+40 - trump_econ_bump
+
+```

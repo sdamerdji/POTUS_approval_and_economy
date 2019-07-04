@@ -1,0 +1,20 @@
+---
+title: "clean_exports"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+High exports is good if it's a large percent of gdp.
+```{r}
+(exports <- read.csv("../data/rawdata/export_data.csv", skip = 2) %>%
+  as_tibble() %>%
+  mutate(date = mdy(Date)) %>%
+  select(date, Percent_Gdp) %>%
+  rename(export_change = Percent_Gdp))
+
+write.csv(exports, file = "../data/cleandata/export.csv", row.names=FALSE)
+```

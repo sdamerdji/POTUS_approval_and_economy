@@ -1,0 +1,54 @@
+---
+title: "clean_approval"
+output: html_document
+---
+
+```{r, include=F}
+library(tidyverse)
+```
+
+
+# Data on Approval Ratings
+## Before Trump
+```{r}
+before_trump <- as_tibble(read.csv(file = "../data/rawdata/potus_polls.csv", sep = '\t', fileEncoding="UTF-8-BOM"))
+(before_trump <- before_trump %>%
+    mutate(startdate = as.Date(Start_Date, format = "%m/%d/%Y"), 
+         enddate = as.Date(End_Date, format = "%m/%d/%Y")) %>%
+    rename(president = President,
+         approve = Approving,
+         disapprove = Disapproving) %>%
+    mutate(date = startdate + (enddate - startdate)/2) %>%
+    select(president, approve, disapprove, date))
+```
+
+## Trump
+```{r}
+trump <- as_tibble(read.csv(file = "../data/rawdata/trump_polls.csv", fileEncoding="UTF-8-BOM"))
+trump
+(trump <- trump  %>%
+   mutate(startdate = as.Date(startdate, format = "%m/%d/%Y"),
+          enddate = as.Date(enddate, format = "%m/%d/%Y")) %>%
+   mutate(date = startdate + (enddate - startdate)/2) %>%
+   select(president, date, approve, disapprove))
+```
+
+## Merge
+```{r}
+(approval <- as_tibble(rbind(trump, before_trump)))
+
+approval %>% 
+  count(president) %>%
+  arrange(desc(n))
+
+# All values exist
+apply(approval, 2, function(x) any(is.na(x)))
+
+range(approval$date)
+```
+
+## Write
+```{r}
+approval
+write.csv(approval, file = "../data/cleandata/approval.csv", row.names=FALSE)
+```

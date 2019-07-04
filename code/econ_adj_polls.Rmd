@@ -1,0 +1,105 @@
+---
+title: "Trumps' Economy Adjust Poll Numbers"
+author: "Salim Damerdji"
+output: html_document
+---
+
+```{r, include=F}
+library(tidyverse)
+```
+
+The economy is great, but Trump's approval ratings are low by historical standards. What would the polls say if the economy were average? Let's find out.
+
+I use two datasets for approval ratings: 538's approval ratings for Trump, and Gallup's approval ratings for presidents before Trump (obtiained from the American Presidency Project.) To use the latter dataset, I had to manually copy/paste all cells to one sheet. Ugh!
+
+Data from:
+APP:
+https://www.presidency.ucsb.edu/statistics/data/presidential-job-approval
+538:
+https://github.com/fivethirtyeight/data/tree/master/trump-approval-ratings
+GDP:
+https://datahub.io/core/gdp-us
+Employment:
+https://datahub.io/core/employment-us#resource-aat1
+
+# Data on Approval Ratings
+```{r}
+before_trump <- as.tibble(read.csv(file = "./potus_polls.csv"))
+trump <- as.tibble(read.csv(file = "./trump_polls.csv"))
+```
+
+```{r}
+#   filter(grade %in% c("A+","A","A-","B+","B"))
+(trump <- trump  %>%
+   mutate(startdate = as.Date(startdate, format = "%m/%d/%Y"),
+          enddate = as.Date(enddate, format = "%m/%d/%Y")) %>%
+   select(president, startdate, enddate, approve, disapprove))
+  
+(before_trump <- before_trump %>%
+    mutate(startdate = as.Date(Start.Date, format = "%m/%d/%Y"), 
+         enddate = as.Date(End.Date, format = "%m/%d/%Y")) %>%
+    rename(president = ï..President,
+         approve = Approving,
+         disapprove = Disapproving) %>%
+    select(-Unsure.NoData, -End.Date, -Start.Date))
+
+(approval <- as.tibble(merge(trump, before_trump, all = TRUE)))
+
+approval %>% 
+  count(president) %>%
+  arrange(desc(n))
+
+apply(approval, 2, function(x) any(is.na(x)))
+
+range(approval$startdate)
+```
+
+# Data on the Economy
+## GDP Data
+```{r}
+(gdp <- as.tibble(read.csv(file = "./gdp_by_quarter.csv")) %>%
+    mutate(date = as.Date(date, format = "%m/%d/%Y")))
+
+(gdp_year <- as.tibble(read.csv(file = "./gdp_by_year.csv")) %>%
+    mutate(date = as.Date(paste(date, 1, 1, sep = "-"))) %>%
+    filter(date < min(gdp$date)))
+
+(gdp <- as.tibble(merge(gdp, gdp_year, all = TRUE)) %>%
+    filter(date > min(approval$startdate)))
+```
+## Employment Data
+```{r}
+(employment_year <- as.tibble(read.csv(file = "./employment_by_year.csv")))
+(employment_quarter <- as.tibble(read.csv(file = "./employment_by_quarter.csv")))
+
+(employment_year <- employment_year %>%
+    mutate(year = as.Date(paste(year, 1, 1, sep = "-"))) %>%
+    rename(date = year) %>%
+    select(date, unemployed_percent))
+
+(employment_quarter <- employment_quarter %>% 
+    gather("month","unemployed_percent", 2:13, na.rm = TRUE))
+
+(employment_quarter <- employment_quarter %>%
+    mutate(date = as.Date(paste(match(employment_quarter$month, month.abb),"01", employment_quarter$ï..Year, sep="-"),
+                          format = "%m-%d-%Y")) %>%
+    select(date, unemployed_percent))
+
+employment_year <- employment_year %>%
+  filter(date < min(employment_quarter$date))
+
+range(employment_quarter$date)
+range(employment_year$date)
+(employment <- as.tibble(merge(employment_year, employment_quarter, all = TRUE)))
+```
+
+
+```{r}
+ggplot(data = approval) +
+  geom_line(aes(x = startdate, y = (approve - disapprove)), color = "black") +
+  geom_line(data = employment, aes(x = date, y = (unemployed_percent)), color = "blue") +
+  geom_line(data = gdp, aes(x = date, y = change.chained), color = "red") +
+  scale_x_date(date_minor_breaks = "1 year") + 
+  xlab("Date") + 
+  ylab("Approval Rating, GDP, Employment")
+```

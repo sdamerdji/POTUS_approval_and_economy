@@ -1,0 +1,24 @@
+---
+title: "Clean Housing Data"
+author: Salim Damerdji
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+## Housing
+
+```{r}
+(housing <- read.csv("../data/rawdata/housing_data.csv", skip=6) %>%
+  as_tibble() %>%
+  select(Date, Index) %>%
+  rename(housing_price = Index, date = Date) %>%
+  mutate(date = as.Date(date_decimal(date))) %>%
+  na.omit())
+```
+
+```{r}
+write.csv(housing, file = "../data/cleandata/housing.csv", row.names=FALSE)

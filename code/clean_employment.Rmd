@@ -1,0 +1,48 @@
+---
+title: "Clean Data"
+author: "Salim Damerdji"
+output: html_document
+---
+
+```{r, include=F}
+library(tidyverse)
+```
+
+## Employment Data
+```{r}
+(employment_year <- as_tibble(read.csv(file = "../data/rawdata/employment_by_year.csv", fileEncoding="UTF-8-BOM")))
+(employment_quarter <- as_tibble(read.csv(file = "../data/rawdata/employment_by_quarter.csv", fileEncoding="UTF-8-BOM")))
+
+(employment_year <- employment_year %>%
+    mutate(year = as.Date(paste(year, 1, 1, sep = "-"))) %>%
+    rename(date = year) %>%
+    select(date, unemployed_percent))
+
+(employment_quarter <- employment_quarter %>% 
+    gather("month","unemployed_percent", 2:13, na.rm = TRUE))
+
+(employment_quarter <- employment_quarter %>%
+    mutate(date = as.Date(paste(match(employment_quarter$month, month.abb),"01", employment_quarter$Year, sep="-"),
+                          format = "%m-%d-%Y")) %>%
+    select(date, unemployed_percent))
+```
+
+## Merge
+```{r}
+employment_year <- employment_year %>%
+  filter(date < min(employment_quarter$date))
+
+range(employment_quarter$date)
+range(employment_year$date)
+
+employment <- as_tibble(merge(employment_year, employment_quarter, all = TRUE))
+employment <- employment[!duplicated(employment$date), ]
+
+# All values exist
+apply(employment, 2, function(x) any(is.na(x)))
+```
+
+## Write
+```{r}
+write.csv(employment, file = "../data/cleandata/employment.csv", row.names=FALSE)
+```

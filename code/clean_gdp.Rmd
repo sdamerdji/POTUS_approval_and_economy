@@ -1,0 +1,24 @@
+---
+title: "clean_gdp"
+output: html_document
+---
+
+```{r, include=F}
+library(tidyverse)
+```
+
+
+```{r}
+(gdp <- as_tibble(read.csv(file = "../data/rawdata/gdp_by_quarter.csv", fileEncoding="UTF-8-BOM")) %>%
+    mutate(date = as.Date(date, format = "%m/%d/%Y")))
+
+(gdp_year <- as_tibble(read.csv(file = "../data/rawdata/gdp_by_year.csv", fileEncoding="UTF-8-BOM")) %>%
+    mutate(date = as.Date(paste(date, 1, 1, sep = "-"))) %>%
+    filter(date < min(gdp$date)))
+
+(gdp <- as_tibble(merge(gdp, gdp_year, all = TRUE)) %>%
+    select(date, change.chained) %>%
+    rename(gdp_change = change.chained))
+
+write.csv(gdp, file = "../data/cleandata/gdp.csv", row.names=FALSE)
+```
